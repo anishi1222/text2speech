@@ -31,6 +31,7 @@ public class Text2Speech {
         speechKey = System.getenv(Text2SpeechConfig.SPEECH_KEY);
         speechRegion = System.getenv(Text2SpeechConfig.SPEECH_REGION);
         voiceList = new ArrayList<>();
+        collectVoiceList();
     }
 
     void collectVoiceList() {
