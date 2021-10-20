@@ -1,6 +1,7 @@
 package io.logicojp.functions;
 
 import com.microsoft.azure.functions.ExecutionContext;
+import com.microsoft.azure.functions.HttpStatus;
 import com.microsoft.azure.functions.OutputBinding;
 import com.microsoft.azure.functions.annotation.*;
 import com.microsoft.cognitiveservices.speech.*;
@@ -12,6 +13,11 @@ import org.json.JSONTokener;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,16 +26,15 @@ import java.util.concurrent.ExecutionException;
 
 public class Text2Speech {
 
-    static List<Voice> voiceList;
     static String speechKey;
     static String speechRegion;
+    static List<Voice> voiceList;
 
     public Text2Speech() {
         speechKey = System.getenv(Text2SpeechConfig.SPEECH_KEY);
         speechRegion = System.getenv(Text2SpeechConfig.SPEECH_REGION);
-
-        // Collect voiceList
-        ;
+        voiceList = new ArrayList<>();
+/*
         try (InputStream is = Text2Speech.class.getResourceAsStream(Text2SpeechConfig.VOICELIST_FILE)) {
             JSONArray jsonArray = new JSONArray(new JSONTokener(is));
             voiceList = new ArrayList<Voice>();
@@ -49,7 +54,38 @@ public class Text2Speech {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        voiceList.forEach(f -> System.out.println(f.toString()));
+*/
+    }
+
+    void collectVoiceList() {
+        String url="https://" + speechRegion + ".tts.speech.microsoft.com/cognitiveservices/voices/list/";
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+            .setHeader("Ocp-Apim-Subscription-Key", speechKey)
+            .uri(URI.create(url))
+            .GET()
+            .build();
+        try {
+            HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            if(httpResponse.statusCode() == HttpStatus.OK.value()) {
+                JSONArray jsonArray = new JSONArray(httpResponse.body());
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    Voice voice = new Voice();
+                    voice.setDisplayName(jsonArray.getJSONObject(i).getString("DisplayName"));
+                    voice.setGender(jsonArray.getJSONObject(i).getString("Gender"));
+                    voice.setLocale(jsonArray.getJSONObject(i).getString("Locale"));
+                    voice.setVoiceType(jsonArray.getJSONObject(i).getString("VoiceType"));
+                    voice.setLocalName(jsonArray.getJSONObject(i).getString("LocalName"));
+                    voice.setName(jsonArray.getJSONObject(i).getString("Name"));
+                    voice.setSampleRateHertz(jsonArray.getJSONObject(i).getString("SampleRateHertz"));
+                    voice.setStatus(jsonArray.getJSONObject(i).getString("Status"));
+                    voice.setShortName(jsonArray.getJSONObject(i).getString("ShortName"));
+                    voiceList.add(voice);
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     @FunctionName("Text2Speech-Java")
@@ -79,21 +115,31 @@ public class Text2Speech {
             context.getLogger().severe("Environment variable [" + Text2SpeechConfig.SPEECH_REGION + "] is not found.");
             return;
         }
+        if(voiceList.isEmpty()) {
+            collectVoiceList();
+        }
 
         // Processing a file
-        context.getLogger().info("Java Blob trigger function processed a blob. Name: " + sourceFileName +
+        context.getLogger().info("Java Blob trigger function processed a blob.\nName: " + sourceFileName +
             "\n speech locale: " + locale +
+            "\n gender: " + gender +
             "\n Size: " + source.length + " Bytes");
 
         // Looking for voice name
-        String voiceName = voiceList.stream()
+        context.getLogger().info("[gender] " + gender + " [locale] " + locale);
+        Optional<Voice> optionalVoice = voiceList.stream()
             .filter(f -> f.getGender().equalsIgnoreCase(gender))
             .filter(f -> f.getLocale().equalsIgnoreCase(locale))
-            .findFirst().get().getName();
+            .findFirst();
+
+        if(optionalVoice.isEmpty()) {
+            context.getLogger().severe("Voice is not found.");
+            return;
+        }
 
         SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
         speechConfig.setSpeechSynthesisLanguage(locale);
-        speechConfig.setSpeechSynthesisVoiceName(voiceName);
+        speechConfig.setSpeechSynthesisVoiceName(optionalVoice.get().getName());
         speechConfig.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Audio16Khz128KBitRateMonoMp3);
         String text = new String(source, Charset.defaultCharset());
 
