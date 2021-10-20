@@ -110,7 +110,7 @@ public class Text2Speech {
             .findFirst();
 
         if (optionalVoice.isEmpty()) {
-            context.getLogger().severe("Voice is not found.");
+            context.getLogger().severe("Voice you specified with locale and gender is not found.");
             return;
         }
 
