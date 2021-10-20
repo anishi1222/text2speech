@@ -93,6 +93,7 @@ public class Text2Speech {
             return;
         }
         if (voiceList.isEmpty()) {
+            context.getLogger().info("voiceList stores no entry.");
             collectVoiceList();
         }
 
