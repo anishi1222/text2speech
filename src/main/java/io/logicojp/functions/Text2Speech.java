@@ -9,11 +9,8 @@ import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 import com.microsoft.cognitiveservices.speech.audio.AudioOutputStream;
 import com.microsoft.cognitiveservices.speech.audio.PullAudioOutputStream;
 import org.json.JSONArray;
-import org.json.JSONTokener;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Array;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -34,40 +31,19 @@ public class Text2Speech {
         speechKey = System.getenv(Text2SpeechConfig.SPEECH_KEY);
         speechRegion = System.getenv(Text2SpeechConfig.SPEECH_REGION);
         voiceList = new ArrayList<>();
-/*
-        try (InputStream is = Text2Speech.class.getResourceAsStream(Text2SpeechConfig.VOICELIST_FILE)) {
-            JSONArray jsonArray = new JSONArray(new JSONTokener(is));
-            voiceList = new ArrayList<Voice>();
-            for (int i = 0; i < jsonArray.length(); i++) {
-                Voice voice = new Voice();
-                voice.setDisplayName(jsonArray.getJSONObject(i).getString("DisplayName"));
-                voice.setGender(jsonArray.getJSONObject(i).getString("Gender"));
-                voice.setLocale(jsonArray.getJSONObject(i).getString("Locale"));
-                voice.setVoiceType(jsonArray.getJSONObject(i).getString("VoiceType"));
-                voice.setLocalName(jsonArray.getJSONObject(i).getString("LocalName"));
-                voice.setName(jsonArray.getJSONObject(i).getString("Name"));
-                voice.setSampleRateHertz(jsonArray.getJSONObject(i).getString("SampleRateHertz"));
-                voice.setStatus(jsonArray.getJSONObject(i).getString("Status"));
-                voice.setShortName(jsonArray.getJSONObject(i).getString("ShortName"));
-                voiceList.add(voice);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-*/
     }
 
     void collectVoiceList() {
-        String url="https://" + speechRegion + ".tts.speech.microsoft.com/cognitiveservices/voices/list/";
+        String url = "https://" + speechRegion + Text2SpeechConfig.VOICELIST_FRAGMENT_URL;
         HttpClient httpClient = HttpClient.newHttpClient();
         HttpRequest httpRequest = HttpRequest.newBuilder()
-            .setHeader("Ocp-Apim-Subscription-Key", speechKey)
+            .setHeader(Text2SpeechConfig.SPEECH_SERVICE_KEY, speechKey)
             .uri(URI.create(url))
             .GET()
             .build();
         try {
             HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            if(httpResponse.statusCode() == HttpStatus.OK.value()) {
+            if (httpResponse.statusCode() == HttpStatus.OK.value()) {
                 JSONArray jsonArray = new JSONArray(httpResponse.body());
                 for (int i = 0; i < jsonArray.length(); i++) {
                     Voice voice = new Voice();
@@ -115,7 +91,7 @@ public class Text2Speech {
             context.getLogger().severe("Environment variable [" + Text2SpeechConfig.SPEECH_REGION + "] is not found.");
             return;
         }
-        if(voiceList.isEmpty()) {
+        if (voiceList.isEmpty()) {
             collectVoiceList();
         }
 
@@ -132,7 +108,7 @@ public class Text2Speech {
             .filter(f -> f.getLocale().equalsIgnoreCase(locale))
             .findFirst();
 
-        if(optionalVoice.isEmpty()) {
+        if (optionalVoice.isEmpty()) {
             context.getLogger().severe("Voice is not found.");
             return;
         }
@@ -143,12 +119,12 @@ public class Text2Speech {
         speechConfig.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Audio16Khz128KBitRateMonoMp3);
         String text = new String(source, Charset.defaultCharset());
 
-        // Blobに書き出したいので、AudioOutputStreamで受け取る
+        // Use AudioOutputStream to output audio data in the form of blob
         try (PullAudioOutputStream stream = AudioOutputStream.createPullStream();
              AudioConfig streamConfig = AudioConfig.fromStreamOutput(stream);
              SpeechSynthesizer synthesizer = new SpeechSynthesizer(speechConfig, streamConfig)) {
 
-            // 結果の確認
+            // Verification
             SpeechSynthesisResult result = synthesizer.SpeakTextAsync(text).get();
             if (result.getReason() == ResultReason.SynthesizingAudioCompleted) {
                 context.getLogger().info("Speech synthesized for text [" + text + "], and the audio was written to output stream.");
@@ -162,7 +138,7 @@ public class Text2Speech {
                     context.getLogger().info("CANCELED: Did you update the subscription info?");
                 }
             }
-            // 結果を取得し、バイト列に書き出す
+            // set bytes array to output binding
             target.setValue(result.getAudioData());
         } catch (ExecutionException | InterruptedException executionException) {
             executionException.printStackTrace();
